@@ -1,7 +1,7 @@
 import tkinter as tk
 import time
 import threading
-from tkinter import simpledialog
+from tkinter import simpledialog, Toplevel, Listbox, Button, Label, Frame, messagebox
 
 # ---------- 世界常数 ----------
 W = H = 15
@@ -30,19 +30,205 @@ levels = [
         "墙 盒                              墙",
         "墙灯墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙"
     ],
+    # 3
+    [
+        "墙灯墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙",
+        "墙我         木木      墙",
+        "墙          木木      路",
+        "墙灯墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙墙"
+    ],
+
 ]
-needLight = [False, True]
+needLight = [False, True, True]
 curr_lvl = 0
 
+
+# ---------- 窗口居中函数 ----------
+def center_window(window, width=None, height=None):
+    """使窗口居中显示"""
+    window.update_idletasks()
+
+    if width is None or height is None:
+        width = window.winfo_reqwidth()
+        height = window.winfo_reqheight()
+
+    # 获取屏幕尺寸
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+
+    # 计算窗口位置
+    x = (screen_width - width) // 2
+    y = (screen_height - height) // 2
+
+    # 设置窗口位置
+    window.geometry(f'{width}x{height}+{x}+{y}')
+
+
 # ---------- 背包 ----------
-inventory = {'钥': False, '灯': False}
+# 物品分解组合规则
+item_rules = {
+    '灯': {'分解': ['火', '丁'], '组合': []},
+    '火': {'分解': [], '组合': [('灯', '丁')]},
+    '丁': {'分解': [], '组合': [('灯', '火')]},
+    '钥': {'分解': ['金', '月'], '组合': []},
+    '金': {'分解': [], '组合': []},
+    '月': {'分解': [], '组合': []},
+    '木': {'分解': [], '组合': []}  # 添加木到物品规则
+}
+
+inventory = {'钥': False, '灯': False, '火': False, '丁': False, '金': False, '月': False, '木': False}
 itemBar = None
+hint_text = None  # 提示文本
+moving_blocked = False  # 新增：标记是否阻止移动
 
 
 def update_bar():
     t = [k for k, v in inventory.items() if v]
     s = '当前拥有：' + ' '.join(t) if t else '当前拥有：无'
     canvas.itemconfig(itemBar, text=s, fill='yellow' if t else 'white')
+
+
+# ---------- 背包管理界面 ----------
+def open_backpack():
+    """打开背包管理窗口"""
+    backpack_window = Toplevel(root)
+    backpack_window.title("背包管理")
+    backpack_window.geometry("350x450")
+
+    # 居中显示背包窗口
+    center_window(backpack_window, 350, 450)
+
+    backpack_window.transient(root)
+    backpack_window.grab_set()
+
+    # 标题
+    Label(backpack_window, text="背包物品", font=("Microsoft YaHei", 16, "bold")).pack(pady=10)
+
+    # 说明文字
+    Label(backpack_window, text="双击物品选择，Shift+点击多选",
+          font=("Microsoft YaHei", 10), fg="gray").pack()
+
+    # 物品列表
+    listbox_frame = Frame(backpack_window)
+    listbox_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+
+    # 滚动条
+    scrollbar = tk.Scrollbar(listbox_frame)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    items_listbox = Listbox(listbox_frame, yscrollcommand=scrollbar.set,
+                            font=("Microsoft YaHei", 12), height=12,
+                            selectmode=tk.EXTENDED)  # 允许多选
+    items_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.config(command=items_listbox.yview)
+
+    # 更新物品列表
+    update_items_list(items_listbox)
+
+    # 按钮框架
+    button_frame = Frame(backpack_window)
+    button_frame.pack(pady=10)
+
+    # 分解按钮
+    def decompose_item():
+        selection = items_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择一个物品！", parent=backpack_window)
+            return
+
+        item = items_listbox.get(selection[0]).split(" (")[0]  # 获取物品名
+        if item in item_rules and item_rules[item]['分解']:
+            # 检查是否可以分解
+            parts = item_rules[item]['分解']
+            # 从背包移除原物品
+            inventory[item] = False
+            # 添加分解后的物品
+            for part in parts:
+                inventory[part] = True
+
+            update_items_list(items_listbox)
+            update_bar()
+            messagebox.showinfo("分解成功", f"{item} 已分解为 {' 和 '.join(parts)}", parent=backpack_window)
+        else:
+            messagebox.showwarning("无法分解", f"{item} 无法分解！", parent=backpack_window)
+
+    decompose_btn = Button(button_frame, text="分解物品", command=decompose_item,
+                           font=("Microsoft YaHei", 10), width=10)
+    decompose_btn.pack(side=tk.LEFT, padx=5)
+
+    # 组合按钮
+    def combine_items():
+        selection = items_listbox.curselection()
+        if len(selection) < 2:
+            messagebox.showwarning("提示", "请至少选择两个物品进行组合！\n（按住Shift键多选）", parent=backpack_window)
+            return
+
+        selected_items = []
+        for idx in selection:
+            item_name = items_listbox.get(idx).split(" (")[0]
+            selected_items.append(item_name)
+
+        # 检查是否可以组合
+        for item in selected_items:
+            if item in item_rules:
+                for combo in item_rules[item]['组合']:
+                    target_item, required_item = combo
+                    if required_item in selected_items:
+                        # 检查是否都有这两个物品
+                        if inventory[item] and inventory[required_item]:
+                            # 移除原料
+                            inventory[item] = False
+                            inventory[required_item] = False
+                            # 添加成品
+                            inventory[target_item] = True
+
+                            update_items_list(items_listbox)
+                            update_bar()
+                            messagebox.showinfo("组合成功",
+                                                f"{item} 和 {required_item} 组合为 {target_item}！",
+                                                parent=backpack_window)
+                            return
+
+        messagebox.showwarning("无法组合", "选中的物品无法组合！", parent=backpack_window)
+
+    combine_btn = Button(button_frame, text="组合物品", command=combine_items,
+                         font=("Microsoft YaHei", 10), width=10)
+    combine_btn.pack(side=tk.LEFT, padx=5)
+
+    # 刷新按钮
+    def refresh_list():
+        update_items_list(items_listbox)
+
+    refresh_btn = Button(button_frame, text="刷新列表", command=refresh_list,
+                         font=("Microsoft YaHei", 10), width=8)
+    refresh_btn.pack(side=tk.LEFT, padx=5)
+
+    # 关闭按钮框架
+    close_frame = Frame(backpack_window)
+    close_frame.pack(pady=5)
+
+    def close_backpack():
+        backpack_window.destroy()
+
+    Button(close_frame, text="关闭背包", command=close_backpack,
+           font=("Microsoft YaHei", 10), width=12).pack()
+
+
+def update_items_list(listbox):
+    """更新物品列表框"""
+    listbox.delete(0, tk.END)
+    for item, has_item in inventory.items():
+        if has_item:
+            # 显示物品和它的分解/组合信息
+            info = item
+            if item_rules[item]['分解']:
+                info += f" (可分解)"
+            elif item_rules[item]['组合']:
+                combos = []
+                combos.append(f"可组合")
+                if combos:
+                    info += f" ({' '.join(combos)})"
+            listbox.insert(tk.END, info)
 
 
 # ---------- 关卡加载（返回实际行列 + 偏移 + 玩家坐标） ----------
@@ -85,9 +271,25 @@ world_world = level_data
 # ---------- Tk ----------
 root = tk.Tk()
 root.title("按Q启动元神")
-canvas = tk.Canvas(root, width=W * CELL, height=H * CELL, bg="black", highlightthickness=0)
+
+# 计算主窗口大小
+window_width = W * CELL
+window_height = H * CELL
+
+# 设置主窗口大小
+root.geometry(f"{window_width}x{window_height}")
+
+# 居中显示主窗口
+center_window(root, window_width, window_height)
+
+canvas = tk.Canvas(root, width=window_width, height=window_height, bg="black", highlightthickness=0)
 canvas.pack()
 itemBar = canvas.create_text(5, 5, text='当前拥有：无', font=("Microsoft YaHei", 14), fill='white', anchor='nw')
+
+# 添加左下角提示
+hint_text = canvas.create_text(5, H * CELL - 20, text='按P打开背包', font=("Microsoft YaHei", 12),
+                               fill='lightblue', anchor='sw')
+
 text_ids = [[None] * W for _ in range(H)]
 
 # 玩家光标（独立对象，最上层）
@@ -160,7 +362,12 @@ def in_light_range(world_x, world_y, has_light):
         # 计算曼哈顿距离
         distance = abs(world_x - lx) + abs(world_y - ly)
 
-        if not has_light:
+        # 如果有火，光照范围增加
+        if inventory.get('火', False):
+            # 有火时，光照范围：半径3的菱形（7×7）
+            if distance <= 3:
+                return True
+        elif not has_light:
             # 无灯时光源范围：半径2的菱形（5×5）
             if distance <= 2:
                 return True
@@ -268,7 +475,7 @@ def spawn_level():
 # ---------- 关卡切换 ----------
 def next_level():
     global curr_lvl, world_world, world_w, world_h, px, py, view_x, view_y, inventory
-    inventory = {'钥': False, '灯': False}
+    inventory = {'钥': False, '灯': False, '火': False, '丁': False, '金': False, '月': False, '木': False}
     update_bar()
     curr_lvl += 1
     if curr_lvl >= len(levels):
@@ -294,11 +501,21 @@ def next_level():
 def can_go(x, y):
     if not (0 <= x < world_w and 0 <= y < world_h):
         return False
-    return world_world[y][x] not in ('墙', '门')
+
+    cell = world_world[y][x]
+
+    # 检查是否是木，且玩家有火
+    if cell == '木':
+        return inventory.get('火', False)
+
+    return cell not in ('墙', '门')
 
 
 def move(dx, dy):
-    global px, py, view_x, view_y
+    global px, py, view_x, view_y, moving_blocked
+
+    if moving_blocked:
+        return  # 如果移动被阻止，直接返回
 
     nx, ny = px + dx, py + dy
     if can_go(nx, ny):
@@ -326,11 +543,28 @@ def move(dx, dy):
             # 更新视图显示
             update_view()
 
+        # 遇到木（并且有火才能通过）
+        if here == '木' and inventory.get('火', False):
+            # 移除木
+            world_world[py][px] = ' '
+            # 添加木到背包
+            inventory['木'] = True
+            update_bar()
+
+            # 阻止移动，显示消息
+            moving_blocked = True
+
+            def after_message():
+                global moving_blocked
+                show_message("用火烧掉了木障碍！获得了木！")
+                moving_blocked = False
+
+            root.after(100, after_message)  # 延迟一点显示，避免卡顿
+
         # 遇到盒子
         if here == '盒':
             # 打开密码输入对话框
             root.after(100, open_password_dialog)  # 延迟一点显示，避免卡顿
-            # 注意：这里不立即移除盒子，等待密码验证结果
             # 盒子是否移除在 open_password_dialog 中根据密码正确性决定
 
         # 检查是否需要更新视图位置
@@ -383,22 +617,27 @@ pressed = set()
 
 
 def on_key_down(e):
-    c = e.char
+    c = e.char.lower()  # 转换为小写
     if c == 'q':
         root.quit()
+        return
+    if c == 'p':
+        # 打开背包
+        open_backpack()
         return
     if c in dirs:
         pressed.add(c)
 
 
 def on_key_up(e):
-    pressed.discard(e.char)
+    c = e.char.lower()
+    pressed.discard(c)
 
 
 def game_loop():
     while True:
         time.sleep(0.08)
-        if pressed:
+        if pressed and not moving_blocked:  # 检查移动是否被阻止
             for c in sorted(pressed):
                 move(*dirs[c])
 
