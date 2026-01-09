@@ -2,6 +2,21 @@ import tkinter as tk
 import time
 import threading
 from tkinter import simpledialog, Toplevel, Listbox, Button, Label, Frame, messagebox
+import os
+import sys
+
+
+# ---------- 资源路径处理函数 ----------
+def resource_path(relative_path):
+    """获取资源的正确路径，支持开发环境和打包环境"""
+    try:
+        # PyInstaller 创建的临时文件夹
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 
 # ---------- 世界常数 ----------
 W = H = 15
@@ -73,13 +88,13 @@ item_rules = {
     '钥': {'分解': ['金', '月'], '组合': []},
     '金': {'分解': [], '组合': []},
     '月': {'分解': [], '组合': []},
-    '木': {'分解': [], '组合': []}  # 添加木到物品规则
+    '木': {'分解': [], '组合': []}
 }
 
 inventory = {'钥': False, '灯': False, '火': False, '丁': False, '金': False, '月': False, '木': False}
 itemBar = None
-hint_text = None  # 提示文本
-moving_blocked = False  # 新增：标记是否阻止移动
+hint_text = None
+moving_blocked = False
 
 
 def update_bar():
@@ -271,6 +286,35 @@ world_world = level_data
 # ---------- Tk ----------
 root = tk.Tk()
 root.title("按Q启动元神")
+
+# 设置窗口图标
+try:
+    icon_path = resource_path('ys_fixed.ico')
+
+    # 如果文件存在，尝试加载
+    if os.path.exists(icon_path):
+        root.iconbitmap(icon_path)
+    else:
+        # 尝试其他可能的图标文件名
+        icon_files = ['ys_fixed.ico', 'ys.ico', 'ys_dixed.ico', 'yuan_shen_new.ico']
+        icon_loaded = False
+
+        for icon_file in icon_files:
+            try:
+                icon_path = resource_path(icon_file)
+                if os.path.exists(icon_path):
+                    root.iconbitmap(icon_path)
+                    print(f"使用图标: {icon_file}")
+                    icon_loaded = True
+                    break
+            except:
+                continue
+
+        if not icon_loaded:
+            print("未找到图标文件，使用默认图标")
+
+except Exception as e:
+    print(f"图标加载失败: {e}")
 
 # 计算主窗口大小
 window_width = W * CELL
